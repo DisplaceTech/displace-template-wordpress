@@ -1,0 +1,38 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{.ProjectName}}-wordpress
+  namespace: {{.Namespace}}
+  labels:
+    app.kubernetes.io/name: {{.ProjectName}}
+    app.kubernetes.io/instance: {{.ProjectName}}
+    app.kubernetes.io/managed-by: displace
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: {{.ProjectName}}.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{.ProjectName}}-wordpress
+            port:
+              number: 80
+  # Uncomment and configure for production with real domain and TLS
+  # - host: {{.ProjectName}}.yourdomain.com
+  #   http:
+  #     paths:
+  #     - path: /
+  #       pathType: Prefix
+  #       backend:
+  #         service:
+  #           name: {{.ProjectName}}-wordpress
+  #           port:
+  #             number: 80
+  # tls:
+  # - secretName: {{.ProjectName}}-wordpress-tls
+  #   hosts:
+  #   - {{.ProjectName}}.yourdomain.com

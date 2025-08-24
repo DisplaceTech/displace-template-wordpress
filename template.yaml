@@ -1,0 +1,95 @@
+name: wordpress
+version: "26.0.0"
+description: "Production-ready WordPress deployment for Kubernetes"
+author: "Displace Technologies"
+license: "Apache-2.0"
+
+# Template configuration
+template:
+  type: "kubernetes"
+  engine: "go-template"
+  
+# Required variables for template processing
+variables:
+  - name: "ProjectName"
+    description: "Name of the WordPress project"
+    required: true
+    type: "string"
+  
+  - name: "Namespace"
+    description: "Kubernetes namespace for deployment"
+    required: true
+    type: "string"
+    
+  - name: "DBRootPassword"
+    description: "MariaDB root password"
+    required: true
+    type: "string"
+    
+  - name: "DBPassword"
+    description: "WordPress database password"
+    required: true
+    type: "string"
+    
+  - name: "WordPressPassword"
+    description: "WordPress admin password"
+    required: true
+    type: "string"
+    
+  - name: "DBRootPasswordB64"
+    description: "Base64 encoded MariaDB root password"
+    required: true
+    type: "string"
+    
+  - name: "DBPasswordB64"
+    description: "Base64 encoded WordPress database password"
+    required: true
+    type: "string"
+
+# Template file mappings
+files:
+  - source: "templates/.gitignore.tmpl"
+    destination: ".gitignore"
+    
+  - source: "templates/.credentials.tmpl"
+    destination: ".credentials"
+    permissions: "0600"
+    
+  - source: "templates/README.md.tmpl"
+    destination: "README.md"
+    
+  - source: "templates/manifests/01-namespace.yaml.tmpl"
+    destination: "manifests/01-namespace.yaml"
+    
+  - source: "templates/manifests/02-database-secret.yaml.tmpl"
+    destination: "manifests/02-database-secret.yaml"
+    
+  - source: "templates/manifests/03-mariadb.yaml.tmpl"
+    destination: "manifests/03-mariadb.yaml"
+    
+  - source: "templates/manifests/04-wordpress.yaml.tmpl"
+    destination: "manifests/04-wordpress.yaml"
+    
+  - source: "templates/manifests/05-ingress.yaml.tmpl"
+    destination: "manifests/05-ingress.yaml"
+    
+  - source: "templates/secrets/database-secret-override.yaml.tmpl"
+    destination: "manifests/secrets/database-secret-override.yaml"
+    permissions: "0600"
+
+# Docker images used in this template
+images:
+  wordpress:
+    repository: "docker.io/bitnami/wordpress"
+    tag: "6.8.2-debian-12-r4"
+    
+  mariadb:
+    repository: "docker.io/bitnami/mariadb"
+    tag: "11.5.2-debian-12-r4"
+
+# Attribution information
+attribution:
+  original_work: "Bitnami WordPress Helm Chart"
+  original_url: "https://artifacthub.io/packages/helm/bitnami/wordpress"
+  original_license: "Apache-2.0"
+  modifications: "Simplified template optimized for Displace CLI workflow"
