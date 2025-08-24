@@ -60,7 +60,7 @@ spec:
         - name: WORDPRESS_USERNAME
           value: admin
         - name: WORDPRESS_PASSWORD
-          value: {{.WordPressPassword}}
+          value: "{{.WordPressPassword}}"
         - name: WORDPRESS_EMAIL
           value: admin@{{.ProjectName}}.local
         ports:
