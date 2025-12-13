@@ -1,78 +1,133 @@
 name: wordpress
 version: "26.0.0"
-description: "Production-ready WordPress deployment for Kubernetes"
-author: "Displace Technologies"
-license: "Apache-2.0"
+description: Production-ready WordPress deployment for Kubernetes
+author: Displace Technologies
+license: Apache-2.0
+homepage: https://github.com/DisplaceTech/displace-template-wordpress
+repository: https://github.com/DisplaceTech/displace-template-wordpress
 
 # Template configuration
 template:
-  type: "kubernetes"
-  engine: "go-template"
-  
-# Required variables for template processing
-variables:
-  - name: "ProjectName"
-    description: "Name of the WordPress project"
-    required: true
-    type: "string"
-  
-  - name: "Namespace"
-    description: "Kubernetes namespace for deployment"
-    required: true
-    type: "string"
-    
-  - name: "DBRootPassword"
-    description: "MariaDB root password"
-    required: true
-    type: "string"
-    
-  - name: "DBPassword"
-    description: "WordPress database password"
-    required: true
-    type: "string"
-    
-  - name: "WordPressPassword"
-    description: "WordPress admin password"
-    required: true
-    type: "string"
-    
-  - name: "DBRootPasswordB64"
-    description: "Base64 encoded MariaDB root password"
-    required: true
-    type: "string"
-    
-  - name: "DBPasswordB64"
-    description: "Base64 encoded WordPress database password"
-    required: true
-    type: "string"
+  type: kubernetes
+  engine: go-template
+
+  # Required variables
+  variables:
+    - name: ProjectName
+      description: "Name of the WordPress project"
+      required: true
+      type: string
+      pattern: "^[a-z][a-z0-9-]*[a-z0-9]$"
+      example: "my-wordpress-site"
+
+    - name: Namespace
+      description: "Kubernetes namespace for deployment"
+      required: true
+      type: string
+      default: "{{.ProjectName}}"
+      pattern: "^[a-z][a-z0-9-]*[a-z0-9]$"
+
+    - name: DBRootPassword
+      description: "MariaDB root password"
+      required: true
+      type: string
+      sensitive: true
+
+    - name: DBPassword
+      description: "WordPress database password"
+      required: true
+      type: string
+      sensitive: true
+
+    - name: WordPressPassword
+      description: "WordPress admin password"
+      required: true
+      type: string
+      sensitive: true
+
+    - name: DBRootPasswordB64
+      description: "Base64 encoded MariaDB root password"
+      required: true
+      type: string
+      computed: true
+
+    - name: DBPasswordB64
+      description: "Base64 encoded WordPress database password"
+      required: true
+      type: string
+      computed: true
+
+  # Optional variables with defaults
+  optional_variables:
+    - name: ProjectDisplayName
+      description: "Human-readable project display name"
+      type: string
+      default: "{{.ProjectName}}"
+      example: "My WordPress Site"
+
+    - name: WordPressReplicas
+      description: "Number of WordPress pod replicas"
+      type: integer
+      default: 1
+      minimum: 1
+      maximum: 10
+
+    - name: WordPressStorageSize
+      description: "Size of WordPress content storage"
+      type: string
+      default: "10Gi"
+      pattern: "^[0-9]+[KMGT]i?$"
+      example: "20Gi"
+
+    - name: MariaDBStorageSize
+      description: "Size of MariaDB data storage"
+      type: string
+      default: "8Gi"
+      pattern: "^[0-9]+[KMGT]i?$"
+      example: "16Gi"
+
+    - name: IngressClass
+      description: "Ingress controller class"
+      type: string
+      default: "nginx"
+      example: "traefik"
+
+    - name: CertIssuer
+      description: "Cert-manager cluster issuer"
+      type: string
+      default: "letsencrypt-prod"
+      example: "letsencrypt-staging"
 
 # Template file mappings
 files:
   - source: "templates/.gitignore.tmpl"
     destination: ".gitignore"
-    
+
   - source: "templates/.credentials.tmpl"
     destination: ".credentials"
     permissions: "0600"
-    
+
+  - source: "templates/Makefile.tmpl"
+    destination: "Makefile"
+
   - source: "templates/README.md.tmpl"
     destination: "README.md"
-    
+
   - source: "templates/manifests/01-namespace.yaml.tmpl"
     destination: "manifests/01-namespace.yaml"
-    
+
   - source: "templates/manifests/02-database-secret.yaml.tmpl"
     destination: "manifests/02-database-secret.yaml"
-    
+
   - source: "templates/manifests/03-mariadb.yaml.tmpl"
     destination: "manifests/03-mariadb.yaml"
-    
+
   - source: "templates/manifests/04-wordpress.yaml.tmpl"
     destination: "manifests/04-wordpress.yaml"
-    
+
   - source: "templates/manifests/05-ingress.yaml.tmpl"
     destination: "manifests/05-ingress.yaml"
-    
+
   - source: "templates/secrets/database-secret-override.yaml.tmpl"
     destination: "manifests/secrets/database-secret-override.yaml"
     permissions: "0600"
@@ -82,10 +137,75 @@ images:
   wordpress:
     repository: "docker.io/bitnami/wordpress"
     tag: "6.8.2-debian-12-r4"
-    
+
   mariadb:
     repository: "docker.io/bitnami/mariadb"
     tag: "11.5.2-debian-12-r4"
+
+# Template features and capabilities
+features:
+  - kubernetes
+  - wordpress
+  - mariadb
+  - persistent-storage
+  - https
+  - database-backup
+
+categories:
+  - web
+  - cms
+  - kubernetes
+
+tags:
+  - wordpress
+  - mariadb
+  - kubernetes
+  - bitnami
+  - https
+  - pvc
+
+# System requirements
+requirements:
+  kubernetes: ">=1.20"
+  tools:
+    - kubectl
+  optional_tools:
+    - displace
+
+# Template structure validation
+structure:
+  templates_dir: "templates"
+
+  required_files:
+    - "templates/Makefile.tmpl"
+    - "templates/README.md.tmpl"
+    - "templates/manifests/01-namespace.yaml.tmpl"
+    - "templates/manifests/03-mariadb.yaml.tmpl"
+    - "templates/manifests/04-wordpress.yaml.tmpl"
+
+# Post-generation instructions
+post_generation:
+  message: |
+    WordPress project created successfully!
+
+    Next steps:
+    1. Deploy to Kubernetes: make deploy
+    2. Access WordPress: make port-forward (then visit http://localhost:8080)
+    3. Login to admin: http://localhost:8080/wp-admin
+
+    Credentials are stored in .credentials file (excluded from git).
+
+    For detailed documentation, see README.md
+
+  commands:
+    - description: "Deploy WordPress to Kubernetes"
+      command: "make deploy"
+    - description: "Check deployment status"
+      command: "make status"
+    - description: "Access WordPress locally"
+      command: "make port-forward"
+    - description: "Backup database"
+      command: "make backup-db"
 
 # Attribution information
 attribution:

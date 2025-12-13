@@ -12,36 +12,54 @@ This project contains:
 
 ## Quick Start
 
-Deploy to Kubernetes:
 ```bash
-# Deploy to a specific cluster
-displace project deploy --cluster=your-cluster-name
+# Deploy WordPress to Kubernetes
+make deploy
 
-# Or deploy interactively
-displace project deploy
+# Check deployment status
+make status
 
-# Manual deployment (apply manifests + credential overrides):
-kubectl apply -f manifests/
-kubectl apply -f manifests/secrets/  # Apply credential overrides
+# Access WordPress locally
+make port-forward
+# Then visit http://localhost:8080
 ```
 
-Check status:
-```bash
-displace project info
-kubectl get all -n {{.Namespace}}
-```
+## Available Commands
+
+Run `make help` to see all available commands:
+
+| Command | Description |
+|---------|-------------|
+| `make deploy` | Deploy WordPress to Kubernetes |
+| `make destroy` | Remove WordPress deployment |
+| `make status` | Check deployment status |
+| `make logs` | View WordPress application logs |
+| `make logs-db` | View MariaDB database logs |
+| `make events` | View recent Kubernetes events |
+| `make shell` | Access WordPress pod shell |
+| `make shell-db` | Access MariaDB pod shell |
+| `make mysql` | Connect to MySQL CLI |
+| `make port-forward` | Forward local port 8080 to WordPress |
+| `make open` | Open WordPress in browser |
+| `make backup-db` | Backup database to local file |
+| `make restore-db` | Restore database from backup |
+| `make backup-content` | Backup WordPress content |
+| `make scale` | Scale WordPress replicas |
+| `make validate` | Validate Kubernetes manifests |
+| `make info` | Display project information |
 
 ## Access WordPress
 
-Port forward to local development:
+After deployment, access WordPress locally:
 ```bash
-kubectl port-forward -n {{.Namespace}} svc/{{.ProjectName}}-wordpress 8080:80
+make port-forward
 # Then open http://localhost:8080
+# Admin panel: http://localhost:8080/wp-admin
 ```
 
 ## Credentials
 
-🔐 **Sensitive credentials are stored in `.credentials` file**
+Sensitive credentials are stored in `.credentials` file (excluded from git).
 
 **WordPress Admin:**
 - Username: admin
@@ -56,37 +74,71 @@ kubectl port-forward -n {{.Namespace}} svc/{{.ProjectName}}-wordpress 8080:80
 
 **To view credentials:**
 ```bash
-# View all credentials
 cat .credentials
-
-# Source credentials for shell use
-source .credentials
-echo "WordPress password: $WORDPRESS_PASSWORD"
 ```
 
-⚠️  **Security Note:** The `.credentials` file is automatically excluded from git via `.gitignore`
+## Database Management
 
-## Management
-
-Scale WordPress:
+### Backup Database
 ```bash
-kubectl scale deployment {{.ProjectName}}-wordpress -n {{.Namespace}} --replicas=3
+make backup-db
+# Creates: backups/wordpress-YYYYMMDD-HHMMSS.sql
 ```
 
-Backup database:
+### Restore Database
 ```bash
-# Load credentials first
-source .credentials
-kubectl exec -n {{.Namespace}} deployment/{{.ProjectName}}-mariadb -- mysqldump -u wordpress -p$DB_PASSWORD wordpress > backup.sql
+make restore-db FILE=backups/wordpress-YYYYMMDD-HHMMSS.sql
 ```
+
+### Access MySQL CLI
+```bash
+make mysql
+```
+
+## Content Management
+
+### Backup WordPress Content
+```bash
+make backup-content
+# Creates: backups/content-YYYYMMDD-HHMMSS/
+```
+
+## Scaling
+
+Scale WordPress to multiple replicas:
+```bash
+make scale REPLICAS=3
+```
+
+Note: MariaDB should remain at 1 replica for data consistency.
 
 ## Cleanup
 
+Remove the deployment:
 ```bash
-displace project destroy
+make destroy
 ```
 
-**Warning**: This permanently deletes all data.
+**Warning**: This permanently deletes all data including database and uploaded content.
+
+## Project Structure
+
+```
+{{.ProjectName}}/
+├── .credentials          # Sensitive credentials (git-ignored)
+├── .gitignore
+├── Makefile              # Project commands
+├── README.md             # This file
+├── backups/              # Database and content backups
+└── manifests/
+    ├── 01-namespace.yaml
+    ├── 02-database-secret.yaml
+    ├── 03-mariadb.yaml
+    ├── 04-wordpress.yaml
+    ├── 05-ingress.yaml
+    └── secrets/
+        └── database-secret-override.yaml
+```
 
 ---
 
