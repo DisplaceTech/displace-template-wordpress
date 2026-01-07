@@ -1,0 +1,15 @@
+# WordPress Uploads Directory
+#
+# This directory is mounted as a Persistent Volume Claim (PVC) in Kubernetes.
+# Files uploaded through WordPress will be stored here.
+#
+# In production:
+#   - Mounted from PVC for persistent storage
+#   - Survives pod restarts and redeployments
+#
+# In development:
+#   - Mounted from local directory
+#   - Changes persist locally
+#
+# NOTE: This directory should NOT contain vendored files.
+# Only user-uploaded content should be stored here.

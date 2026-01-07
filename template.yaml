@@ -1,6 +1,6 @@
 name: wordpress
-version: "26.0.0"
-description: Production-ready WordPress deployment for Kubernetes
+version: "27.0.0"
+description: Production-ready WordPress deployment for Kubernetes with build-from-source
 author: Displace Technologies
 license: Apache-2.0
 homepage: https://github.com/DisplaceTech/displace-template-wordpress
@@ -26,6 +26,13 @@ template:
       type: string
       default: "{{.ProjectName}}"
       pattern: "^[a-z][a-z0-9-]*[a-z0-9]$"
+
+    - name: Domain
+      description: "Domain name for the WordPress site"
+      required: true
+      type: string
+      pattern: "^[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]$"
+      example: "blog.example.com"
 
     - name: DBRootPassword
       description: "MariaDB root password"
@@ -57,6 +64,63 @@ template:
       type: string
       computed: true
 
+    # WordPress security keys (computed/generated)
+    - name: AuthKey
+      description: "WordPress AUTH_KEY"
+      required: true
+      type: string
+      computed: true
+      sensitive: true
+
+    - name: SecureAuthKey
+      description: "WordPress SECURE_AUTH_KEY"
+      required: true
+      type: string
+      computed: true
+      sensitive: true
+
+    - name: LoggedInKey
+      description: "WordPress LOGGED_IN_KEY"
+      required: true
+      type: string
+      computed: true
+      sensitive: true
+
+    - name: NonceKey
+      description: "WordPress NONCE_KEY"
+      required: true
+      type: string
+      computed: true
+      sensitive: true
+
+    - name: AuthSalt
+      description: "WordPress AUTH_SALT"
+      required: true
+      type: string
+      computed: true
+      sensitive: true
+
+    - name: SecureAuthSalt
+      description: "WordPress SECURE_AUTH_SALT"
+      required: true
+      type: string
+      computed: true
+      sensitive: true
+
+    - name: LoggedInSalt
+      description: "WordPress LOGGED_IN_SALT"
+      required: true
+      type: string
+      computed: true
+      sensitive: true
+
+    - name: NonceSalt
+      description: "WordPress NONCE_SALT"
+      required: true
+      type: string
+      computed: true
+      sensitive: true
+
   # Optional variables with defaults
   optional_variables:
     - name: ProjectDisplayName
@@ -64,6 +128,20 @@ template:
       type: string
       default: "{{.ProjectName}}"
       example: "My WordPress Site"
+
+    - name: PHPVersion
+      description: "PHP version for WordPress"
+      type: string
+      default: "8.3"
+      pattern: "^8\\.[0-9]+$"
+      example: "8.2"
+
+    - name: WordPressVersion
+      description: "WordPress version to install"
+      type: string
+      default: "6.7.1"
+      pattern: "^[0-9]+\\.[0-9]+\\.?[0-9]*$"
+      example: "6.6.2"
 
     - name: WordPressReplicas
       description: "Number of WordPress pod replicas"
@@ -73,7 +151,7 @@ template:
       maximum: 10
 
     - name: WordPressStorageSize
-      description: "Size of WordPress content storage"
+      description: "Size of WordPress uploads storage"
       type: string
       default: "10Gi"
       pattern: "^[0-9]+[KMGT]i?$"
@@ -98,6 +176,26 @@ template:
       default: "letsencrypt-prod"
       example: "letsencrypt-staging"
 
+    - name: RegistryURL
+      description: "Container registry URL for built images"
+      type: string
+      default: ""
+      example: "ghcr.io/myorg"
+
+    - name: MemoryLimit
+      description: "Container memory limit"
+      type: string
+      default: "512Mi"
+      pattern: "^[0-9]+[KMGT]i?$"
+      example: "1Gi"
+
+    - name: CPULimit
+      description: "Container CPU limit"
+      type: string
+      default: "500m"
+      pattern: "^[0-9]+m?$"
+      example: "1000m"
+
 # Template file mappings
 files:
   - source: "templates/.gitignore.tmpl"
@@ -112,6 +210,33 @@ files:
 
   - source: "templates/README.md.tmpl"
     destination: "README.md"
+
+  - source: "templates/Dockerfile.tmpl"
+    destination: "Dockerfile"
+
+  - source: "templates/docker-compose.yaml.tmpl"
+    destination: "docker-compose.yaml"
+
+  - source: "templates/docker/nginx.conf.tmpl"
+    destination: "docker/nginx.conf"
+
+  - source: "templates/docker/supervisord.conf.tmpl"
+    destination: "docker/supervisord.conf"
+
+  - source: "templates/docker/wp-config.php.tmpl"
+    destination: "docker/wp-config.php"
+
+  - source: "templates/themes/.gitkeep.tmpl"
+    destination: "themes/.gitkeep"
+
+  - source: "templates/plugins/.gitkeep.tmpl"
+    destination: "plugins/.gitkeep"
+
+  - source: "templates/mu-plugins/.gitkeep.tmpl"
+    destination: "mu-plugins/.gitkeep"
+
+  - source: "templates/uploads/.gitkeep.tmpl"
+    destination: "uploads/.gitkeep"
 
   - source: "templates/manifests/01-namespace.yaml.tmpl"
     destination: "manifests/01-namespace.yaml"
@@ -132,15 +257,17 @@ files:
     destination: "manifests/secrets/database-secret-override.yaml"
     permissions: "0600"
 
-# Docker images used in this template
-images:
-  wordpress:
-    repository: "docker.io/bitnami/wordpress"
-    tag: "6.8.2-debian-12-r4"
+# Build configuration
+build:
+  dockerfile: "Dockerfile"
+  context: "."
+  args:
+    PHP_VERSION: "{{.PHPVersion}}"
+    WORDPRESS_VERSION: "{{.WordPressVersion}}"
 
-  mariadb:
-    repository: "docker.io/bitnami/mariadb"
-    tag: "11.5.2-debian-12-r4"
+  # Image naming
+  image_name: "{{.ProjectName}}"
+  image_tag: "latest"
 
 # Template features and capabilities
 features:
@@ -150,6 +277,9 @@ features:
   - persistent-storage
   - https
   - database-backup
+  - build-from-source
+  - dev-mode
+  - hot-reload
 
 categories:
   - web
@@ -160,16 +290,20 @@ tags:
   - wordpress
   - mariadb
   - kubernetes
-  - bitnami
+  - php
+  - nginx
   - https
   - pvc
+  - docker-build
 
 # System requirements
 requirements:
   kubernetes: ">=1.20"
+  docker: ">=20.10"
   tools:
-    - kubectl
+    - docker
   optional_tools:
+    - kubectl
     - displace
 
 # Template structure validation
@@ -179,6 +313,7 @@ structure:
   required_files:
     - "templates/Makefile.tmpl"
     - "templates/README.md.tmpl"
+    - "templates/Dockerfile.tmpl"
     - "templates/manifests/01-namespace.yaml.tmpl"
     - "templates/manifests/03-mariadb.yaml.tmpl"
     - "templates/manifests/04-wordpress.yaml.tmpl"
@@ -188,16 +323,35 @@ post_generation:
   message: |
     WordPress project created successfully!
 
-    Next steps:
-    1. Deploy to Kubernetes: make deploy
-    2. Access WordPress: make port-forward (then visit http://localhost:8080)
-    3. Login to admin: http://localhost:8080/wp-admin
+    Project Structure:
+      themes/     - Custom WordPress themes (vendored into image)
+      plugins/    - Custom WordPress plugins (vendored into image)
+      mu-plugins/ - Must-use plugins (auto-activated)
+      uploads/    - Persistent storage (PVC in production)
 
-    Credentials are stored in .credentials file (excluded from git).
+    Getting Started:
+      1. Add custom themes to ./themes/ directory
+      2. Add custom plugins to ./plugins/ directory
+      3. Build the image: make build
+      4. Deploy to Kubernetes: make deploy
+
+    Development Mode:
+      make dev          - Start local dev environment with hot-reload
+      make dev-logs     - View container logs
+      make dev-down     - Stop dev environment
+
+    Configuration:
+      - PHP Version: {{.PHPVersion}}
+      - WordPress Version: {{.WordPressVersion}}
+      - Credentials stored in .credentials (excluded from git)
 
     For detailed documentation, see README.md
 
   commands:
+    - description: "Start development environment"
+      command: "make dev"
+    - description: "Build Docker image"
+      command: "make build"
     - description: "Deploy WordPress to Kubernetes"
       command: "make deploy"
     - description: "Check deployment status"
@@ -209,7 +363,7 @@ post_generation:
 
 # Attribution information
 attribution:
-  original_work: "Bitnami WordPress Helm Chart"
-  original_url: "https://artifacthub.io/packages/helm/bitnami/wordpress"
-  original_license: "Apache-2.0"
-  modifications: "Simplified template optimized for Displace CLI workflow"
+  original_work: "WordPress Official Docker Image"
+  original_url: "https://hub.docker.com/_/wordpress"
+  original_license: "GPLv2"
+  modifications: "Custom build-from-source template for Displace CLI"

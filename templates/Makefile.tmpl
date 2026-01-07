@@ -1,5 +1,9 @@
 # {{.ProjectName}} WordPress Makefile
-# Cross-platform support for Linux and macOS
+# Build-from-source WordPress with custom themes/plugins
+#
+# Versions:
+#   PHP: {{.PHPVersion}}
+#   WordPress: {{.WordPressVersion}}
 
 # Load environment variables from .credentials if it exists
 ifneq (,$(wildcard .credentials))
@@ -10,7 +14,21 @@ endif
 # Default values
 PROJECT_NAME ?= {{.ProjectName}}
 NAMESPACE ?= {{.Namespace}}
+DOMAIN ?= {{.Domain}}
+IMAGE_TAG ?= latest
+REGISTRY_URL ?= {{.RegistryURL}}
+PHP_VERSION ?= {{.PHPVersion}}
+WORDPRESS_VERSION ?= {{.WordPressVersion}}
 KUBECTL ?= kubectl
+DOCKER ?= docker
+
+# Full image name
+IMAGE_NAME = $(PROJECT_NAME)
+ifdef REGISTRY_URL
+    FULL_IMAGE = $(REGISTRY_URL)/$(IMAGE_NAME):$(IMAGE_TAG)
+else
+    FULL_IMAGE = $(IMAGE_NAME):$(IMAGE_TAG)
+endif
 
 # Detect OS for cross-platform compatibility
 UNAME_S := $(shell uname -s)
@@ -34,36 +52,118 @@ NC=\033[0m # No Color
 help: ## Display this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\n$(BLUE)Usage:$(NC)\n  make $(YELLOW)<target>$(NC)\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  $(YELLOW)%-15s$(NC) %s\n", $$1, $$2 } /^##@/ { printf "\n$(BLUE)%s$(NC)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
+##@ Development
+.PHONY: dev
+dev: ## Start local development environment with hot-reload
+	@echo "$(BLUE)Starting development environment...$(NC)"
+	@echo "$(YELLOW)Themes and plugins are mounted for hot-reload$(NC)"
+	@$(DOCKER) compose up -d
+	@echo ""
+	@echo "$(GREEN)Development environment started!$(NC)"
+	@echo ""
+	@echo "$(BLUE)Access:$(NC)"
+	@echo "  $(YELLOW)WordPress:$(NC) http://localhost:8080"
+	@echo "  $(YELLOW)Admin:$(NC) http://localhost:8080/wp-admin"
+	@echo ""
+	@echo "$(BLUE)Hot-reload directories:$(NC)"
+	@echo "  $(YELLOW)themes/$(NC)     - Edit themes, changes appear immediately"
+	@echo "  $(YELLOW)plugins/$(NC)    - Edit plugins, changes appear immediately"
+	@echo "  $(YELLOW)mu-plugins/$(NC) - Edit must-use plugins"
+	@echo ""
+	@echo "$(BLUE)Commands:$(NC)"
+	@echo "  make dev-logs  - View container logs"
+	@echo "  make dev-down  - Stop development environment"
+
+.PHONY: dev-down
+dev-down: ## Stop local development environment
+	@echo "$(BLUE)Stopping development environment...$(NC)"
+	@$(DOCKER) compose down
+	@echo "$(GREEN)Development environment stopped$(NC)"
+
+.PHONY: dev-logs
+dev-logs: ## View local development logs
+	@$(DOCKER) compose logs -f
+
+.PHONY: dev-rebuild
+dev-rebuild: ## Rebuild and restart development environment
+	@echo "$(BLUE)Rebuilding development environment...$(NC)"
+	@$(DOCKER) compose down
+	@$(DOCKER) compose build --no-cache
+	@$(DOCKER) compose up -d
+	@echo "$(GREEN)Development environment rebuilt!$(NC)"
+
+##@ Build
+.PHONY: build
+build: ## Build the WordPress Docker image
+	@echo "$(BLUE)Building WordPress Docker image...$(NC)"
+	@echo "  $(YELLOW)PHP Version:$(NC) $(PHP_VERSION)"
+	@echo "  $(YELLOW)WordPress Version:$(NC) $(WORDPRESS_VERSION)"
+	@echo "  $(YELLOW)Image:$(NC) $(FULL_IMAGE)"
+	@$(DOCKER) build \
+		--build-arg PHP_VERSION=$(PHP_VERSION) \
+		--build-arg WORDPRESS_VERSION=$(WORDPRESS_VERSION) \
+		-t $(IMAGE_NAME):$(IMAGE_TAG) \
+		-t $(IMAGE_NAME):latest \
+		.
+	@if [ -n "$(REGISTRY_URL)" ]; then \
+		$(DOCKER) tag $(IMAGE_NAME):$(IMAGE_TAG) $(FULL_IMAGE); \
+		echo "$(GREEN)Tagged as $(FULL_IMAGE)$(NC)"; \
+	fi
+	@echo "$(GREEN)Build completed!$(NC)"
+
+.PHONY: push
+push: ## Push image to registry (requires REGISTRY_URL)
+	@if [ -z "$(REGISTRY_URL)" ]; then \
+		echo "$(RED)Error: REGISTRY_URL not set$(NC)"; \
+		echo "Set REGISTRY_URL in .credentials or environment"; \
+		exit 1; \
+	fi
+	@echo "$(BLUE)Pushing image to $(FULL_IMAGE)...$(NC)"
+	@$(DOCKER) push $(FULL_IMAGE)
+	@echo "$(GREEN)Image pushed successfully!$(NC)"
+
+.PHONY: build-push
+build-push: build push ## Build and push image in one step
+
 ##@ Deployment
 .PHONY: deploy
-deploy: ## Deploy WordPress to Kubernetes
+deploy: build ## Build image and deploy to Kubernetes
 	@echo "$(BLUE)Deploying WordPress to Kubernetes...$(NC)"
 	@if command -v displace >/dev/null 2>&1; then \
 		displace project deploy; \
 	else \
 		echo "$(YELLOW)Displace CLI not found, using kubectl...$(NC)"; \
 		$(KUBECTL) apply -f manifests/; \
-		$(KUBECTL) apply -f manifests/secrets/ 2>/dev/null || true; \
 	fi
 	@echo "$(BLUE)Waiting for database to be ready...$(NC)"
-	@$(KUBECTL) wait --for=condition=available deployment/$(PROJECT_NAME)-mariadb -n $(NAMESPACE) --timeout=120s
+	@$(KUBECTL) wait --for=condition=available deployment/$(PROJECT_NAME)-mariadb -n $(NAMESPACE) --timeout=120s 2>/dev/null || true
 	@echo "$(BLUE)Waiting for WordPress to be ready...$(NC)"
-	@$(KUBECTL) wait --for=condition=available deployment/$(PROJECT_NAME)-wordpress -n $(NAMESPACE) --timeout=180s
+	@$(KUBECTL) wait --for=condition=available deployment/$(PROJECT_NAME)-wordpress -n $(NAMESPACE) --timeout=180s 2>/dev/null || true
 	@echo ""
 	@echo "$(GREEN)Deployment completed!$(NC)"
 	@echo ""
 	@echo "$(BLUE)Access your site:$(NC)"
 	@echo "  $(YELLOW)Local access:$(NC) Run 'make port-forward' then visit http://localhost:8080"
 	@echo "  $(YELLOW)Admin panel:$(NC) http://localhost:8080/wp-admin"
-	@echo ""
-	@echo "$(BLUE)Credentials:$(NC)"
-	@echo "  $(YELLOW)Username:$(NC) admin"
-	@echo "  $(YELLOW)Password:$(NC) See .credentials file"
+	@if $(KUBECTL) get ingress -n $(NAMESPACE) $(PROJECT_NAME) >/dev/null 2>&1; then \
+		echo "  $(YELLOW)Public URL:$(NC) https://$(DOMAIN)"; \
+	fi
 	@echo ""
 	@echo "$(BLUE)Next steps:$(NC)"
 	@echo "  - Run 'make status' to check deployment health"
 	@echo "  - Run 'make logs' to view application logs"
 	@echo "  - Run 'make backup-db' to backup the database"
+
+.PHONY: deploy-only
+deploy-only: ## Deploy to Kubernetes without rebuilding image
+	@echo "$(BLUE)Deploying WordPress to Kubernetes (using existing image)...$(NC)"
+	@if command -v displace >/dev/null 2>&1; then \
+		displace project deploy; \
+	else \
+		echo "$(YELLOW)Displace CLI not found, using kubectl...$(NC)"; \
+		$(KUBECTL) apply -f manifests/; \
+	fi
+	@echo "$(GREEN)Deployment completed!$(NC)"
 
 .PHONY: destroy
 destroy: ## Remove WordPress deployment from Kubernetes
@@ -118,7 +218,7 @@ shell: ## Access WordPress pod shell
 	@echo "$(BLUE)Opening shell in WordPress pod...$(NC)"
 	@POD=$$($(KUBECTL) get pod -n $(NAMESPACE) -l app.kubernetes.io/name=$(PROJECT_NAME),app.kubernetes.io/component=wordpress -o jsonpath='{.items[0].metadata.name}'); \
 	if [ -n "$$POD" ]; then \
-		$(KUBECTL) exec -it -n $(NAMESPACE) $$POD -- /bin/bash; \
+		$(KUBECTL) exec -it -n $(NAMESPACE) $$POD -- /bin/sh; \
 	else \
 		echo "$(RED)No running WordPress pods found$(NC)"; \
 	fi
@@ -190,13 +290,13 @@ restore-db: ## Restore WordPress database from backup file (usage: make restore-
 
 ##@ Content Management
 .PHONY: backup-content
-backup-content: ## Backup WordPress content (wp-content) to local directory
-	@echo "$(BLUE)Backing up WordPress content...$(NC)"
-	@mkdir -p backups/content-$$(date +%Y%m%d-%H%M%S)
+backup-content: ## Backup WordPress uploads from pod to local directory
+	@echo "$(BLUE)Backing up WordPress uploads...$(NC)"
+	@mkdir -p backups/uploads-$$(date +%Y%m%d-%H%M%S)
 	@POD=$$($(KUBECTL) get pod -n $(NAMESPACE) -l app.kubernetes.io/name=$(PROJECT_NAME),app.kubernetes.io/component=wordpress -o jsonpath='{.items[0].metadata.name}'); \
 	if [ -n "$$POD" ]; then \
-		$(KUBECTL) cp $(NAMESPACE)/$$POD:/bitnami/wordpress/wp-content backups/content-$$(date +%Y%m%d-%H%M%S)/ -c wordpress; \
-		echo "$(GREEN)Content backed up to backups/content-$$(date +%Y%m%d-%H%M%S)/$(NC)"; \
+		$(KUBECTL) cp $(NAMESPACE)/$$POD:/var/www/html/wp-content/uploads backups/uploads-$$(date +%Y%m%d-%H%M%S)/; \
+		echo "$(GREEN)Uploads backed up to backups/uploads-$$(date +%Y%m%d-%H%M%S)/$(NC)"; \
 	else \
 		echo "$(RED)No running WordPress pods found$(NC)"; \
 	fi
@@ -227,5 +327,16 @@ info: ## Display project information
 	@echo "$(BLUE)Project Information:$(NC)"
 	@echo "  $(YELLOW)Project:$(NC) $(PROJECT_NAME)"
 	@echo "  $(YELLOW)Namespace:$(NC) $(NAMESPACE)"
-	@echo "  $(YELLOW)WordPress:$(NC) docker.io/bitnami/wordpress:6.8.2-debian-12-r4"
-	@echo "  $(YELLOW)MariaDB:$(NC) docker.io/bitnami/mariadb:11.5.2-debian-12-r4"
+	@echo "  $(YELLOW)Domain:$(NC) $(DOMAIN)"
+	@echo "  $(YELLOW)PHP Version:$(NC) $(PHP_VERSION)"
+	@echo "  $(YELLOW)WordPress Version:$(NC) $(WORDPRESS_VERSION)"
+	@echo "  $(YELLOW)Image:$(NC) $(FULL_IMAGE)"
+	@echo "  $(YELLOW)Registry:$(NC) $(REGISTRY_URL)"
+
+.PHONY: clean
+clean: ## Clean build artifacts and local data
+	@echo "$(BLUE)Cleaning build artifacts...$(NC)"
+	@$(DOCKER) compose down -v 2>/dev/null || true
+	@$(DOCKER) rmi $(IMAGE_NAME):$(IMAGE_TAG) 2>/dev/null || true
+	@$(DOCKER) rmi $(IMAGE_NAME):latest 2>/dev/null || true
+	@echo "$(GREEN)Clean completed!$(NC)"

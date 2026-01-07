@@ -1,0 +1,90 @@
+# {{.ProjectName}} - Local Development Environment
+#
+# Usage:
+#   make dev           - Start development environment
+#   make dev-down      - Stop development environment
+#   make dev-logs      - View container logs
+#
+# This configuration provides:
+#   - Hot-reload for themes and plugins (mounted volumes)
+#   - Local MariaDB database
+#   - WordPress accessible at http://localhost:8080
+
+services:
+  wordpress:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PHP_VERSION: "{{.PHPVersion}}"
+        WORDPRESS_VERSION: "{{.WordPressVersion}}"
+    ports:
+      - "8080:80"
+    environment:
+      WORDPRESS_DATABASE_HOST: mariadb
+      WORDPRESS_DATABASE_NAME: wordpress
+      WORDPRESS_DATABASE_USER: wordpress
+      WORDPRESS_DATABASE_PASSWORD: ${DB_PASSWORD:-wordpress_dev_password}
+      WORDPRESS_DEBUG: "true"
+      WORDPRESS_DEBUG_LOG: "true"
+      WORDPRESS_DEBUG_DISPLAY: "true"
+      WORDPRESS_HOME: http://localhost:8080
+      WORDPRESS_SITEURL: http://localhost:8080
+    volumes:
+      # Mount custom themes for hot-reload
+      - ./themes:/var/www/html/wp-content/themes:cached
+      # Mount custom plugins for hot-reload
+      - ./plugins:/var/www/html/wp-content/plugins:cached
+      # Mount mu-plugins for hot-reload
+      - ./mu-plugins:/var/www/html/wp-content/mu-plugins:cached
+      # Persistent uploads directory
+      - ./uploads:/var/www/html/wp-content/uploads
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/wp-admin/install.php"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  mariadb:
+    image: mariadb:11.5
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root_dev_password}
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: ${DB_PASSWORD:-wordpress_dev_password}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # Optional: Database admin interface
+  adminer:
+    image: adminer:4
+    ports:
+      - "8081:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: mariadb
+    depends_on:
+      - mariadb
+    profiles:
+      - tools
+    restart: unless-stopped
+
+volumes:
+  mariadb_data:
+    driver: local
+
+# Networks (using default bridge network)
+networks:
+  default:
+    name: {{.ProjectName}}_network

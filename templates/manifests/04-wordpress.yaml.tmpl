@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{.ProjectName}}-wordpress-data
+  name: {{.ProjectName}}-wordpress-uploads
   namespace: {{.Namespace}}
   labels:
     app.kubernetes.io/name: {{.ProjectName}}
@@ -13,7 +13,32 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 10Gi
+      storage: {{.WordPressStorageSize}}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{.ProjectName}}-wordpress
+  namespace: {{.Namespace}}
+  labels:
+    app.kubernetes.io/name: {{.ProjectName}}
+    app.kubernetes.io/instance: {{.ProjectName}}
+    app.kubernetes.io/component: wordpress
+    app.kubernetes.io/managed-by: displace
+type: Opaque
+stringData:
+  WORDPRESS_DATABASE_HOST: "{{.ProjectName}}-mariadb"
+  WORDPRESS_DATABASE_NAME: "wordpress"
+  WORDPRESS_DATABASE_USER: "wordpress"
+  WORDPRESS_DATABASE_PASSWORD: "{{.DBPassword}}"
+  WORDPRESS_AUTH_KEY: "{{.AuthKey}}"
+  WORDPRESS_SECURE_AUTH_KEY: "{{.SecureAuthKey}}"
+  WORDPRESS_LOGGED_IN_KEY: "{{.LoggedInKey}}"
+  WORDPRESS_NONCE_KEY: "{{.NonceKey}}"
+  WORDPRESS_AUTH_SALT: "{{.AuthSalt}}"
+  WORDPRESS_SECURE_AUTH_SALT: "{{.SecureAuthSalt}}"
+  WORDPRESS_LOGGED_IN_SALT: "{{.LoggedInSalt}}"
+  WORDPRESS_NONCE_SALT: "{{.NonceSalt}}"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -26,11 +51,16 @@ metadata:
     app.kubernetes.io/component: wordpress
     app.kubernetes.io/managed-by: displace
 spec:
-  replicas: 1
+  replicas: {{.WordPressReplicas}}
   selector:
     matchLabels:
       app.kubernetes.io/name: {{.ProjectName}}
       app.kubernetes.io/component: wordpress
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   template:
     metadata:
       labels:
@@ -38,45 +68,38 @@ spec:
         app.kubernetes.io/instance: {{.ProjectName}}
         app.kubernetes.io/component: wordpress
     spec:
+      initContainers:
+      # Wait for MariaDB to be ready
+      - name: wait-for-db
+        image: busybox:1.36
+        command: ['sh', '-c', 'until nc -z {{.ProjectName}}-mariadb 3306; do echo "Waiting for MariaDB..."; sleep 2; done; echo "MariaDB is ready!"']
       containers:
       - name: wordpress
-        image: docker.io/bitnami/wordpress:6.8.2-debian-12-r4
+        # Use locally-built image
+        image: {{.ProjectName}}:latest
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - secretRef:
+            name: {{.ProjectName}}-wordpress
         env:
-        - name: WORDPRESS_DATABASE_HOST
-          value: {{.ProjectName}}-mariadb
-        - name: WORDPRESS_DATABASE_PORT_NUMBER
-          value: "3306"
-        - name: WORDPRESS_DATABASE_NAME
-          value: wordpress
-        - name: WORDPRESS_DATABASE_USER
-          value: wordpress
-        - name: WORDPRESS_DATABASE_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: {{.ProjectName}}-mariadb
-              key: password
-        - name: WORDPRESS_BLOG_NAME
-          value: "{{.ProjectDisplayName}} Blog"
-        - name: WORDPRESS_USERNAME
-          value: admin
-        - name: WORDPRESS_PASSWORD
-          value: "{{.WordPressPassword}}"
-        - name: WORDPRESS_EMAIL
-          value: admin@{{.ProjectName}}.local
+        - name: WORDPRESS_ENV
+          value: "production"
+        - name: WORDPRESS_HOME
+          value: "https://{{.Domain}}"
+        - name: WORDPRESS_SITEURL
+          value: "https://{{.Domain}}"
         ports:
-        - containerPort: 8080
+        - containerPort: 80
           name: http
-        - containerPort: 8443
-          name: https
         livenessProbe:
           httpGet:
             path: /wp-admin/install.php
             port: http
             httpHeaders:
             - name: Host
-              value: 127.0.0.1
+              value: localhost
           initialDelaySeconds: 120
-          periodSeconds: 10
+          periodSeconds: 15
           timeoutSeconds: 5
           failureThreshold: 6
         readinessProbe:
@@ -85,25 +108,25 @@ spec:
             port: http
             httpHeaders:
             - name: Host
-              value: 127.0.0.1
+              value: localhost
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
-          failureThreshold: 6
+          failureThreshold: 3
         resources:
           limits:
-            memory: 512Mi
-            cpu: 500m
+            memory: {{.MemoryLimit}}
+            cpu: {{.CPULimit}}
           requests:
             memory: 256Mi
             cpu: 100m
         volumeMounts:
-        - name: wordpress-data
-          mountPath: /bitnami/wordpress
+        - name: uploads
+          mountPath: /var/www/html/wp-content/uploads
       volumes:
-      - name: wordpress-data
+      - name: uploads
         persistentVolumeClaim:
-          claimName: {{.ProjectName}}-wordpress-data
+          claimName: {{.ProjectName}}-wordpress-uploads
 ---
 apiVersion: v1
 kind: Service
@@ -122,10 +145,6 @@ spec:
     targetPort: http
     protocol: TCP
     name: http
-  - port: 443
-    targetPort: https
-    protocol: TCP
-    name: https
   selector:
     app.kubernetes.io/name: {{.ProjectName}}
     app.kubernetes.io/component: wordpress

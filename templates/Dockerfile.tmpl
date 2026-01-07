@@ -1,0 +1,125 @@
+# {{.ProjectName}} WordPress Dockerfile
+# Build from source with customizable PHP and WordPress versions
+#
+# Build args:
+#   PHP_VERSION     - PHP version (default: {{.PHPVersion}})
+#   WORDPRESS_VERSION - WordPress version (default: {{.WordPressVersion}})
+
+ARG PHP_VERSION={{.PHPVersion}}
+ARG WORDPRESS_VERSION={{.WordPressVersion}}
+
+# =============================================================================
+# Stage 1: WordPress Download and Setup
+# =============================================================================
+FROM alpine:3.19 AS wordpress-source
+
+ARG WORDPRESS_VERSION
+
+# Install dependencies for downloading
+RUN apk add --no-cache curl tar
+
+# Download WordPress
+WORKDIR /wordpress
+RUN curl -o wordpress.tar.gz -fSL "https://wordpress.org/wordpress-${WORDPRESS_VERSION}.tar.gz" \
+    && tar -xzf wordpress.tar.gz --strip-components=1 \
+    && rm wordpress.tar.gz
+
+# =============================================================================
+# Stage 2: Production Image
+# =============================================================================
+FROM php:${PHP_VERSION}-fpm-alpine AS production
+
+# Install system dependencies
+RUN apk add --no-cache \
+    nginx \
+    supervisor \
+    mysql-client \
+    libpng-dev \
+    libjpeg-turbo-dev \
+    libwebp-dev \
+    freetype-dev \
+    libzip-dev \
+    oniguruma-dev \
+    icu-dev \
+    imagemagick-dev \
+    && apk add --no-cache --virtual .build-deps \
+        $PHPIZE_DEPS \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
+    && docker-php-ext-install -j$(nproc) \
+        mysqli \
+        pdo_mysql \
+        mbstring \
+        exif \
+        bcmath \
+        gd \
+        zip \
+        intl \
+        opcache \
+    && pecl install imagick \
+    && docker-php-ext-enable imagick \
+    && apk del .build-deps
+
+# Configure PHP for WordPress
+RUN { \
+    echo 'opcache.memory_consumption=128'; \
+    echo 'opcache.interned_strings_buffer=8'; \
+    echo 'opcache.max_accelerated_files=4000'; \
+    echo 'opcache.revalidate_freq=2'; \
+    echo 'opcache.fast_shutdown=1'; \
+    } > /usr/local/etc/php/conf.d/opcache-recommended.ini
+
+RUN { \
+    echo 'upload_max_filesize=64M'; \
+    echo 'post_max_size=64M'; \
+    echo 'max_execution_time=300'; \
+    echo 'memory_limit=256M'; \
+    } > /usr/local/etc/php/conf.d/wordpress.ini
+
+# Create nginx configuration
+RUN mkdir -p /etc/nginx/http.d
+COPY docker/nginx.conf /etc/nginx/http.d/default.conf
+
+# Create supervisor configuration
+RUN mkdir -p /etc/supervisor/conf.d
+COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+# Set working directory
+WORKDIR /var/www/html
+
+# Copy WordPress core from download stage
+COPY --from=wordpress-source /wordpress /var/www/html
+
+# Copy custom themes (vendored into image)
+COPY themes/ /var/www/html/wp-content/themes/
+
+# Copy custom plugins (vendored into image)
+COPY plugins/ /var/www/html/wp-content/plugins/
+
+# Copy mu-plugins (must-use plugins)
+COPY mu-plugins/ /var/www/html/wp-content/mu-plugins/
+
+# Copy wp-config.php template
+COPY docker/wp-config.php /var/www/html/wp-config.php
+
+# Create uploads directory (will be mounted as PVC)
+RUN mkdir -p /var/www/html/wp-content/uploads
+
+# Set permissions
+RUN chown -R www-data:www-data /var/www/html \
+    && chmod -R 755 /var/www/html \
+    && chmod -R 775 /var/www/html/wp-content/uploads
+
+# Create healthcheck script
+RUN echo '#!/bin/sh' > /usr/local/bin/healthcheck.sh \
+    && echo 'curl -sf http://localhost/wp-admin/install.php > /dev/null || curl -sf http://localhost/wp-login.php > /dev/null' >> /usr/local/bin/healthcheck.sh \
+    && chmod +x /usr/local/bin/healthcheck.sh
+
+# Expose port
+EXPOSE 80
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD /usr/local/bin/healthcheck.sh
+
+# Start supervisor (manages nginx and php-fpm)
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
