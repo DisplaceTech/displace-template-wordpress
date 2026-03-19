@@ -40,21 +40,21 @@ spec:
     spec:
       containers:
       - name: mariadb
-        image: docker.io/bitnami/mariadb:11.5.2-debian-12-r4
+        image: docker.io/library/mariadb:11.5
         env:
-        - name: MARIADB_ROOT_PASSWORD
+        - name: MYSQL_ROOT_PASSWORD
           valueFrom:
             secretKeyRef:
               name: {{.ProjectName}}-mariadb
               key: root-password
-        - name: MARIADB_USER
+        - name: MYSQL_USER
           value: wordpress
-        - name: MARIADB_PASSWORD
+        - name: MYSQL_PASSWORD
           valueFrom:
             secretKeyRef:
               name: {{.ProjectName}}-mariadb
               key: password
-        - name: MARIADB_DATABASE
+        - name: MYSQL_DATABASE
           value: wordpress
         ports:
         - containerPort: 3306
@@ -64,31 +64,31 @@ spec:
             command:
             - /bin/bash
             - -ec
-            - mysqladmin status -uroot -p$MARIADB_ROOT_PASSWORD
+            - healthcheck.sh --connect --innodb_initialized
           initialDelaySeconds: 120
           periodSeconds: 10
-          timeoutSeconds: 1
+          timeoutSeconds: 5
           failureThreshold: 3
         readinessProbe:
           exec:
             command:
             - /bin/bash
             - -ec
-            - mysqladmin status -uroot -p$MARIADB_ROOT_PASSWORD
-          initialDelaySeconds: 30
+            - healthcheck.sh --connect
+          initialDelaySeconds: 15
           periodSeconds: 10
-          timeoutSeconds: 1
+          timeoutSeconds: 5
           failureThreshold: 3
         resources:
           limits:
-            memory: 512Mi
-            cpu: 500m
+            memory: {{.MemoryLimit}}
+            cpu: {{.CPULimit}}
           requests:
             memory: 256Mi
             cpu: 100m
         volumeMounts:
         - name: data
-          mountPath: /bitnami/mariadb
+          mountPath: /var/lib/mysql
       volumes:
       - name: data
         persistentVolumeClaim:

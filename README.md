@@ -161,10 +161,10 @@ The generated Makefile includes comprehensive commands:
 
 ## Docker Images
 
-This template uses official Bitnami images:
+This template builds WordPress from source and uses the official MariaDB image:
 
-- **WordPress**: `docker.io/bitnami/wordpress:6.8.2-debian-12-r4`
-- **MariaDB**: `docker.io/bitnami/mariadb:11.5.2-debian-12-r4`
+- **WordPress**: Custom build from `Dockerfile` (PHP {{PHPVersion}}, WordPress {{WordPressVersion}})
+- **MariaDB**: `docker.io/library/mariadb:11.5`
 
 ## Troubleshooting
 
@@ -193,11 +193,7 @@ kubectl logs -n cert-manager deployment/cert-manager
 
 ## Attribution
 
-This template is based on and inspired by the excellent work done by Bitnami:
-
-- **Original Helm Chart**: [bitnami/wordpress](https://artifacthub.io/packages/helm/bitnami/wordpress)
-- **License**: Apache License 2.0
-- **Images**: [Bitnami WordPress](https://github.com/bitnami/containers/tree/main/bitnami/wordpress) and [Bitnami MariaDB](https://github.com/bitnami/containers/tree/main/bitnami/mariadb)
+This template was originally inspired by the Bitnami WordPress Helm chart and has since been rewritten to use official upstream images and a build-from-source approach.
 
 This template provides a simplified, security-focused WordPress deployment optimized for the Displace CLI workflow.
 
