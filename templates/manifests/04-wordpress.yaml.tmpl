@@ -84,10 +84,11 @@ spec:
         env:
         - name: WORDPRESS_ENV
           value: "production"
-        - name: WORDPRESS_HOME
-          value: "https://{{.Domain}}"
-        - name: WORDPRESS_SITEURL
-          value: "https://{{.Domain}}"
+        # WORDPRESS_HOME and WORDPRESS_SITEURL are intentionally omitted so
+        # WordPress auto-detects the URL from the incoming request. Set these
+        # in the secret or via kubectl set env when you have a real domain:
+        #   kubectl set env deploy/{{.ProjectName}}-wordpress \
+        #     WORDPRESS_HOME=https://example.com WORDPRESS_SITEURL=https://example.com
         ports:
         - containerPort: 80
           name: http
