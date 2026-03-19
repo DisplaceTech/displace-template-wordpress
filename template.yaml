@@ -139,7 +139,7 @@ template:
     - name: WordPressVersion
       description: "WordPress version to install"
       type: string
-      default: "6.7.1"
+      default: "6.9.4"
       pattern: "^[0-9]+\\.[0-9]+\\.?[0-9]*$"
       example: "6.6.2"
 
